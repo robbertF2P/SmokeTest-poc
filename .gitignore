@@ -5,3 +5,7 @@ Thumbs.db
 .env
 .vscode/
 .idea/
+
+# Local credential files – never commit these
+.env.smoke.local
+.env.smoke.*.local
