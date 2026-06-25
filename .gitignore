@@ -10,3 +10,17 @@ Thumbs.db
 .env.smoke.local
 .env.smoke.*.local
 *.local
+
+# Dependencies
+node_modules/
+
+# Test artifacts
+artifacts/
+swagger/
+
+# .NET build output
+bin/
+obj/
+
+# Cypress cache
+.cypress-cache/
