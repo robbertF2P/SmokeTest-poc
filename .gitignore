@@ -9,3 +9,4 @@ Thumbs.db
 # Local credential files – never commit these
 .env.smoke.local
 .env.smoke.*.local
+*.local
