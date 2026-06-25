@@ -50,6 +50,7 @@ module.exports = defineConfig({
     menuButtonSelector: process.env.SMOKE_MENU_BUTTON_SELECTOR || '',
     menuItemSelector: process.env.SMOKE_MENU_ITEM_SELECTOR || '',
     failOnConsoleError: process.env.SMOKE_FAIL_ON_CONSOLE_ERROR !== 'false',
+    consoleSettleMs: Number(process.env.SMOKE_CONSOLE_SETTLE_MS || 500),
     loginMode: process.env.SMOKE_LOGIN_MODE || 'service',
     serviceUsername: process.env.SMOKE_SERVICE_USERNAME || '',
     servicePassword: process.env.SMOKE_SERVICE_PASSWORD || '',

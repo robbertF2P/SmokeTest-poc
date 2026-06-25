@@ -72,10 +72,16 @@ public sealed class LoginSmokeTests
         process.OutputDataReceived += (_, args) => AppendLine(output, args.Data);
         process.ErrorDataReceived += (_, args) => AppendLine(output, args.Data);
 
-        process.Start();
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start the Cypress process.");
+        }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        await process.WaitForExitAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        await process.WaitForExitAsync(cts.Token);
 
         return (process.ExitCode, output.ToString());
     }

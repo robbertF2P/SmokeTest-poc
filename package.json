@@ -9,6 +9,12 @@
     "test:smoke:rebuild": "node scripts/run-smoke-podman.js --rebuild",
     "test:smoke:cypress": "cypress run --spec cypress/e2e/login_smoke.cy.js",
     "test:smoke:edge": "cypress run --browser edge --headed --spec cypress/e2e/login_smoke.cy.js",
+    "discover:api": "node scripts/discover-api.js",
+    "capture:api": "cypress run --spec cypress/e2e/api_capture.cy.js",
+    "build:openapi": "node scripts/build-openapi-from-capture.js",
+    "document:api": "npm run capture:api && npm run build:openapi",
+    "test:ui-context-map": "node scripts/test-ui-context-map.js",
+    "audit:mobile": "node scripts/rc-mobile-audit.mjs",
     "test:xunit": "dotnet test Floor2PlanSmokeTests.csproj"
   },
   "keywords": [],

@@ -1,13 +1,11 @@
-const defaultTargetUrl = 'https://2025-14-patch.floor2plan.com/Account/Login';
+const splitTargetUrls = () => Cypress.env('targetUrls')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean);
 
-const splitTargetUrls = () => {
-  const configuredUrls = Cypress.env('targetUrls') || Cypress.env('targetUrl') || defaultTargetUrl;
-
-  return configuredUrls
-    .split(',')
-    .map((url) => url.trim())
-    .filter(Boolean);
-};
+const {
+  buildUiContextMapArtifact,
+} = require('../../scripts/ui-context-map');
 
 const tileSelectors = [
   '.f2ps-tile',
@@ -63,6 +61,7 @@ const menuItemSelectors = [
 ].join(',');
 
 const homeTileSelector = () => Cypress.env('homeTileSelector') || tileSelectors;
+const logicalHomeTileSelector = () => Cypress.env('logicalHomeTileSelector') || '.f2ps-tile:has(.f2ps-tile-title)';
 const menuButtonSelector = () => Cypress.env('menuButtonSelector') || menuButtonSelectors;
 const menuItemSelector = () => Cypress.env('menuItemSelector') || menuItemSelectors;
 const loginMode = () => (Cypress.env('loginMode') || 'service').toString().toLowerCase();
@@ -95,6 +94,9 @@ const consoleArtifactName = (targetUrl, testTitle) =>
 
 const navigationArtifactName = (targetUrl, testTitle) =>
   `artifacts/navigation/${safeName(targetUrl)}-${safeName(testTitle)}.json`;
+
+const uiContextMapArtifactName = (targetUrl) =>
+  `artifacts/ui-context-map/${safeName(new URL(targetUrl).host)}.json`;
 
 const slotNumbers = (count) => Array.from({ length: count }, (_, index) => index);
 
@@ -154,16 +156,23 @@ const formatConsoleArg = (arg) => {
   }
 };
 
+const recordConsoleEntry = (consoleEntries, entry) => {
+  consoleEntries.push({
+    timestamp: new Date().toISOString(),
+    ...entry,
+  });
+};
+
 const captureConsole = (win, consoleEntries) => {
   ['warn', 'error'].forEach((level) => {
     const original = win.console[level];
 
     win.console[level] = (...args) => {
-      consoleEntries.push({
+      recordConsoleEntry(consoleEntries, {
         level,
+        source: `console.${level}`,
         url: win.location.href,
         message: args.map(formatConsoleArg).join(' '),
-        timestamp: new Date().toISOString(),
       });
 
       if (typeof original === 'function') {
@@ -171,7 +180,52 @@ const captureConsole = (win, consoleEntries) => {
       }
     };
   });
+
+  win.addEventListener('error', (event) => {
+    recordConsoleEntry(consoleEntries, {
+      level: 'error',
+      source: 'window error',
+      url: win.location.href,
+      message: `${event.message || 'window error'} ${event.filename || ''}:${event.lineno || ''}`.trim(),
+    });
+  });
+
+  win.addEventListener('unhandledrejection', (event) => {
+    recordConsoleEntry(consoleEntries, {
+      level: 'error',
+      source: 'unhandled rejection',
+      url: win.location.href,
+      message: `Unhandled rejection: ${formatConsoleArg(event.reason)}`,
+    });
+  });
 };
+
+// Module-level reference required for Cypress.on('uncaught:exception'), which is registered
+// at module scope and cannot close over per-test state. Updated in beforeEach/afterEach.
+const uncaughtContext = { entries: null };
+
+Cypress.on('uncaught:exception', (error) => {
+  if (!uncaughtContext.entries) {
+    return undefined;
+  }
+
+  recordConsoleEntry(uncaughtContext.entries, {
+    level: 'error',
+    source: 'uncaught exception',
+    url: 'uncaught exception',
+    message: `${error.name}: ${error.message}`,
+  });
+
+  return false;
+});
+
+const ERROR_PAGE_PATTERNS = [
+  'An error occurred',
+  'Object reference not set',
+  'HTTP Error 500',
+  'Application Error',
+  '500 Internal Server Error',
+];
 
 const assertPageLoaded = (name) => {
   cy.location('href', { timeout: 30000 }).then((href) => {
@@ -180,7 +234,12 @@ const assertPageLoaded = (name) => {
   cy.get('body', { timeout: 30000 })
     .should('be.visible')
     .and(($body) => {
-      expect($body.text().trim(), `${name} body text`).to.not.equal('');
+      const text = $body.text().trim();
+
+      expect(text, `${name} body text`).to.not.equal('');
+      ERROR_PAGE_PATTERNS.forEach((pattern) => {
+        expect(text, `${name} error page`).to.not.include(pattern);
+      });
     });
 };
 
@@ -198,16 +257,16 @@ const assertLoggedInHome = (targetUrl) => {
   assertHomeTiles();
 };
 
-const loginThroughLogo = (targetUrl) => {
+const loginThroughLogo = () => {
   cy.log('Click lower-right Floorganise logo');
   cy.get('#azure-login img[alt="Floorganise logo"]')
     .should('be.visible')
     .click({ force: true });
 
-  assertLoggedInHome(targetUrl);
+  cy.location('pathname', { timeout: 30000 }).should('not.include', '/Account/Login');
 };
 
-const loginThroughServiceForm = (targetUrl) => {
+const loginThroughServiceForm = () => {
   const username = Cypress.env('serviceUsername');
   const password = Cypress.env('servicePassword');
 
@@ -228,26 +287,36 @@ const loginThroughServiceForm = (targetUrl) => {
     .first()
     .click({ force: true });
 
-  assertLoggedInHome(targetUrl);
+  cy.location('pathname', { timeout: 30000 }).should('not.include', '/Account/Login');
 };
 
 const loginToHome = (targetUrl) => {
-  cy.visit(targetUrl);
+  // Cache the authenticated session across all tests in this spec run.
+  cy.session(
+    ['smoke-login', targetUrl, loginMode()],
+    () => {
+      cy.visit(targetUrl);
+      cy.location('href', { timeout: 30000 }).should('include', '/Account/Login');
+      cy.get('body').should('be.visible').and('not.be.empty');
 
-  cy.location('href', { timeout: 30000 }).should('include', '/Account/Login');
-  cy.get('body').should('be.visible').and('not.be.empty');
+      const mode = loginMode();
+      if (mode === 'logo') {
+        loginThroughLogo();
+      } else if (mode === 'service') {
+        loginThroughServiceForm();
+      } else {
+        throw new Error(`Unsupported SMOKE_LOGIN_MODE: ${Cypress.env('loginMode')}`);
+      }
+    },
+    {
+      validate() {
+        cy.location('pathname').should('not.include', '/Account/Login');
+      },
+    },
+  );
 
-  if (loginMode() === 'logo') {
-    loginThroughLogo(targetUrl);
-    return;
-  }
-
-  if (loginMode() === 'service') {
-    loginThroughServiceForm(targetUrl);
-    return;
-  }
-
-  throw new Error(`Unsupported SMOKE_LOGIN_MODE: ${Cypress.env('loginMode')}`);
+  cy.visit(new URL(targetUrl).origin + '/');
+  assertLoggedInHome(targetUrl);
 };
 
 const visitHome = (homeUrl) => {
@@ -273,6 +342,19 @@ const collectTiles = (limit) => cy.get('body').then(($body) => visibleElements($
     index,
     label: labelFor(element),
   })));
+
+const collectLogicalHomeTiles = () => cy.get('body').then(($body) => visibleElements($body, logicalHomeTileSelector())
+  .map((element, index) => {
+    const $tile = Cypress.$(element);
+    const abbreviation = $tile.find('.f2ps-tile-abbreviation').first().text().trim();
+    const label = $tile.find('.f2ps-tile-title').first().text().trim() || labelFor(element);
+
+    return {
+      index,
+      abbreviation,
+      label,
+    };
+  }));
 
 const openUpperLeftMenu = () => {
   cy.get('body').then(($body) => {
@@ -337,6 +419,57 @@ const clickMenuItem = (item, appOrigin) => {
   });
 };
 
+const emitUiContextMapArtifact = (targetUrl, homeUrl, appOrigin, menuLimit) => {
+  const entries = [];
+
+  return collectLogicalHomeTiles().then((tiles) => {
+    let chain = cy.wrap(null, { log: false });
+
+    tiles.forEach((tile) => {
+      chain = chain.then(() => {
+        visitHome(homeUrl);
+        clickVisibleByIndex(logicalHomeTileSelector(), tile.index, tile.label);
+        assertPageLoaded(`home tile ${tile.label}`);
+
+        return cy.location('href').then((href) => {
+          entries.push({
+            label: tile.label,
+            abbreviation: tile.abbreviation,
+            url: href,
+            source: 'home-tile',
+            status: 'opened',
+          });
+        });
+      });
+    });
+
+    return chain.then(() => {
+      visitHome(homeUrl);
+      openUpperLeftMenu();
+
+      return collectMenuItems(menuLimit, appOrigin).then((items) => {
+        items.forEach((item) => {
+          entries.push({
+            label: item.label,
+            href: item.href,
+            url: new URL(item.href, appOrigin).href,
+            source: 'menu',
+            status: 'discovered',
+          });
+        });
+
+        const artifact = buildUiContextMapArtifact(entries, {
+          targetUrl,
+          loginMode: loginMode(),
+          serviceUsername: Cypress.env('serviceUsername') || null,
+        });
+
+        return cy.writeFile(uiContextMapArtifactName(targetUrl), artifact, { log: true });
+      });
+    });
+  });
+};
+
 splitTargetUrls().forEach((targetUrl) => {
   describe(`Floor2Plan smoke test: ${targetUrl}`, () => {
     let consoleEntries;
@@ -347,6 +480,7 @@ splitTargetUrls().forEach((targetUrl) => {
     beforeEach(() => {
       consoleEntries = [];
       navigationEntries = [];
+      uncaughtContext.entries = consoleEntries;
 
       cy.on('window:before:load', (win) => {
         captureConsole(win, consoleEntries);
@@ -356,15 +490,23 @@ splitTargetUrls().forEach((targetUrl) => {
     afterEach(() => {
       const consoleArtifact = consoleArtifactName(targetUrl, Cypress.currentTest.title);
       const navigationArtifact = navigationArtifactName(targetUrl, Cypress.currentTest.title);
+      const consoleSettleMs = numberEnv('consoleSettleMs', 2000);
 
+      cy.wait(consoleSettleMs);
       cy.writeFile(navigationArtifact, navigationEntries, { log: true });
       cy.writeFile(consoleArtifact, consoleEntries, { log: true })
         .then(() => {
+        uncaughtContext.entries = null;
+
           const consoleErrors = consoleEntries.filter((entry) => entry.level === 'error');
 
           if (Cypress.env('failOnConsoleError') && consoleErrors.length > 0) {
+            const details = consoleErrors
+              .map(({ source, url, message }) => `[${source || 'error'}] ${url}\n${message}`)
+              .join('\n\n');
+
             throw new Error(
-              `${consoleErrors.length} browser console error(s) were recorded. See ${consoleArtifact}.`,
+              `${consoleErrors.length} browser error(s) were recorded. See ${consoleArtifact}.\n\n${details}`,
             );
           }
         });
@@ -459,5 +601,14 @@ splitTargetUrls().forEach((targetUrl) => {
         }
       });
     }
+
+    it('emits ui-to-context map artifact', () => {
+      loginToHome(targetUrl);
+
+      cy.location('href').then((homeUrl) => {
+        const appOrigin = new URL(homeUrl).origin;
+        emitUiContextMapArtifact(targetUrl, homeUrl, appOrigin, menuSlotLimit);
+      });
+    });
   });
 });
