@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-24T12:00:00.000Z",
+  "targetUrl": "https://2025-14-patch.floor2plan.com/Account/Login",
+  "host": "2025-14-patch.floor2plan.com",
+  "loginMode": "service",
+  "serviceUsername": "testrd",
+  "boundedContextMapDoc": "docs/Modularization/02-bounded-context-map.md",
+  "summary": {
+    "pageCount": 14,
+    "homeTileCount": 9,
+    "menuOnlyCount": 5
+  },
+  "pages": [
+    {
+      "label": "Projects",
+      "abbreviation": "Pr",
+      "route": "/Pbs/Planning#/Project/2",
+      "url": "https://2025-14-patch.floor2plan.com/Pbs/Planning/#/Project/2",
+      "sources": ["home-tile", "menu"],
+      "primaryContext": {
+        "id": 1,
+        "name": "Planning & Resource Management",
+        "label": "PBS"
+      },
+      "secondaryContexts": [
+        {
+          "id": 2,
+          "name": "Workforce & Organization",
+          "label": "Workforce"
+        }
+      ],
+      "mvcArea": "Pbs"
+    },
+    {
+      "label": "Tickets",
+      "abbreviation": "Ti",
+      "route": "/Ticket/Index#/",
+      "url": "https://2025-14-patch.floor2plan.com/Ticket/Index#/",
+      "sources": ["home-tile", "menu"],
+      "primaryContext": {
+        "id": 5,
+        "name": "Workflow & Ticketing",
+        "label": "Tickets"
+      },
+      "secondaryContexts": [
+        {
+          "id": 1,
+          "name": "Planning & Resource Management",
+          "label": "PBS"
+        },
+        {
+          "id": 2,
+          "name": "Workforce & Organization",
+          "label": "Workforce"
+        }
+      ],
+      "mvcArea": "Ticket"
+    }
+  ],
+  "contextsNotInNavigation": [
+    {
+      "context": {
+        "id": 6,
+        "name": "Synchronization & Import Pipeline",
+        "label": "Sync"
+      },
+      "exampleRoutes": ["/Sync/", "/Sync/ImportExport"],
+      "mvcArea": "Sync"
+    }
+  ]
+}
